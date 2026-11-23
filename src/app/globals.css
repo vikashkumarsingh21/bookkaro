@@ -1,0 +1,223 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-input: var(--border-input);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-fg: var(--sidebar-fg);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-ring: var(--ring);
+  --radius-card: var(--radius-card);
+  --radius-control: var(--radius-control);
+
+  --font-serif: var(--font-serif), "Playfair Display", Georgia, serif;
+  --font-sans: var(--font-sans), "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-partner-display: var(--font-partner-display), "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-mono: var(--font-mono), "JetBrains Mono", monospace;
+  --font-heading: var(--font-heading);
+  --font-body: var(--font-sans);
+
+  /* Semantic aliases for backwards compatibility across existing pages */
+  --color-ivory: var(--canvas);
+  --color-alabaster: var(--canvas);
+  --color-stone-warm: var(--surface-subtle);
+  --color-forest: var(--primary);
+  --color-forest-hover: var(--primary-hover);
+  --color-terracotta: var(--accent);
+  --color-terracotta-hover: var(--accent);
+  --color-border-hairline: var(--border-subtle);
+  --color-sand: var(--border-subtle);
+}
+
+/* =======================================================================
+   TRI-WORKSPACE SEMANTIC SCOPES (WCAG 2.2 AA / AAA VERIFIED)
+   ======================================================================= */
+
+/* a) Customer Workspace: Heritage Hospitality Editorial */
+:root,
+[data-workspace="customer"] {
+  --canvas: #F5F1E8;
+  --surface: #FCFBF8;
+  --surface-subtle: #EAE3D5;
+  --ink: #1C1815;
+  --ink-muted: #595148;
+  --primary: #163829;
+  --primary-hover: #0F271C;
+  --primary-fg: #FCFBF8;
+  --accent: #7A5B22;
+  --accent-fg: #FCFBF8;
+  --hero-bg: #191613;
+  --hero-brass: #C5A56A;
+  --hero-sand: #D6CEC2;
+  --sidebar: #163829;
+  --sidebar-fg: #FCFBF8;
+  --sidebar-muted: #DDD5C7;
+  --border-subtle: #DDD5C7;
+  --border-input: #8A8175;
+  --ring: #163829;
+  --radius-card: 14px;
+  --radius-control: 10px;
+  --font-heading: var(--font-serif);
+}
+
+/* b) Partner Workspace: Warm Atelier Front-Desk */
+[data-workspace="partner"] {
+  --canvas: #F6F3EE;
+  --surface: #FFFFFF;
+  --surface-subtle: #EFEAE2;
+  --ink: #1F1A17;
+  --ink-muted: #5C524A;
+  --primary: #9C421C;
+  --primary-hover: #7D3415;
+  --primary-fg: #FFFFFF;
+  --accent: #21503A;
+  --accent-fg: #FFFFFF;
+  --sidebar: #241D18;
+  --sidebar-fg: #F6F2EB;
+  --sidebar-muted: #C4B9AD;
+  --border-subtle: #E5DDD2;
+  --border-input: #877E75;
+  --ring: #9C421C;
+  --radius-card: 10px;
+  --radius-control: 8px;
+  --font-heading: var(--font-partner-display);
+}
+
+/* c) Admin Workspace: Architectural Graphite & Oxblood Ops */
+[data-workspace="admin"] {
+  --canvas: #F2F2F0;
+  --surface: #FFFFFF;
+  --surface-subtle: #E8E8E5;
+  --ink: #151517;
+  --ink-muted: #525259;
+  --primary: #1A1A1D;
+  --primary-hover: #0B0B0D;
+  --primary-fg: #FFFFFF;
+  --accent: #6B1D2F;
+  --accent-fg: #FFFFFF;
+  --sidebar: #141416;
+  --sidebar-fg: #F2F2F0;
+  --sidebar-muted: #A8A8B0;
+  --border-subtle: #DCDCD8;
+  --border-input: #84848B;
+  --ring: #6B1D2F;
+  --radius-card: 6px;
+  --radius-control: 6px;
+  --font-heading: var(--font-sans);
+}
+
+/* =======================================================================
+   STRICT RESETS: ZERO GLOSS, ZERO GLOW, ZERO BROWSER BLUE (#0000EE)
+   ======================================================================= */
+
+@layer base {
+  /* Smooth scroll behavior for anchor links, with reduced motion override */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+    .reveal-motion {
+      opacity: 1 !important;
+      transform: none !important;
+      transition: none !important;
+    }
+  }
+
+  /* Strict Global Reset for <a> tags: never render browser default blue or underlines */
+  a, a:visited, a:active {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: none;
+  }
+
+  /* HTML & Body: Base canvas and ink */
+  html, body {
+    overflow-x: hidden;
+    background-color: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    min-height: 100vh;
+  }
+
+  /* Editorial Headings with workspace-scoped dynamic font */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading), var(--font-serif), system-ui, sans-serif;
+    letter-spacing: -0.025em;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  /* Strict Image & Media Boundaries: never blow up or overflow */
+  img, svg, video, canvas, audio, iframe, embed, object {
+    display: block;
+    max-width: 100%;
+  }
+
+  img {
+    height: auto;
+  }
+
+  /* Button & form control typography reset */
+  button, input, select, textarea {
+    font-family: inherit;
+  }
+
+  /* Tap highlight override for mobile browsers */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Strict Focus Visible using semantic --ring */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Tabular figures for prices, dates, metrics, distances */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Flat matte utility surfaces */
+.matte-border {
+  border: 1px solid var(--border-subtle);
+}
+
+.matte-surface {
+  background-color: var(--surface);
+  border: 1px solid var(--border-subtle);
+}
+
+.matte-stone {
+  background-color: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+}

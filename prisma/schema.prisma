@@ -1,0 +1,489 @@
+// BOOKKARO - Production Multi-Category Discovery & Booking Marketplace
+// Normalized Prisma Schema with PostgreSQL, PostGIS Radius Search, and Strict Auditing
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// -------------------------------------------------------------
+// ENUMS
+// -------------------------------------------------------------
+
+enum UserRole {
+  CUSTOMER
+  PROVIDER_OWNER
+  PROVIDER_STAFF
+  ADMIN
+}
+
+enum ProviderCategory {
+  HEALTHCARE
+  HOTELS
+  RESTAURANTS
+  SALON
+  VEHICLE_CARE
+}
+
+enum KYCStatus {
+  PENDING
+  UNDER_REVIEW
+  VERIFIED
+  REJECTED
+  SUSPENDED
+}
+
+enum CommercialModel {
+  SUBSCRIPTION
+  COMMISSION
+}
+
+enum SubscriptionPlan {
+  NONE
+  STARTER
+  GROWTH
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+enum BookingStatus {
+  REQUESTED
+  ACCEPTED
+  CONFIRMED
+  COMPLETED
+  DECLINED
+  EXPIRED
+  CANCELLED
+  NO_SHOW
+  DISPUTED
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL_TOKEN
+  PAID_OFFLINE
+  REFUNDED
+}
+
+enum DisputeStatus {
+  NONE
+  OPEN
+  RESOLVED_REFUNDED
+  RESOLVED_DISMISSED
+}
+
+enum LedgerStatus {
+  PENDING
+  PENDING_INVOICE
+  INVOICED
+  PAID
+  SETTLED
+  DISPUTED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  OVERDUE
+  VOID
+}
+
+enum CRMStage {
+  LEAD_01
+  DISCUSS_02
+  VERIFY_03
+  ACTIVATE_04
+  CONFIGURE_05
+  GO_LIVE_06
+}
+
+// -------------------------------------------------------------
+// CORE USER & AUTHENTICATION
+// -------------------------------------------------------------
+
+model User {
+  id                  String         @id @default(uuid())
+  email               String         @unique
+  phone               String         @unique
+  passwordHash        String
+  firstName           String
+  lastName            String
+  role                UserRole       @default(CUSTOMER)
+  isActive            Boolean        @default(true)
+  forcePasswordChange Boolean        @default(false)
+  avatarUrl           String?
+  providerId          String?        // Populated if role is PROVIDER_STAFF
+  
+  // Relations
+  ownedProviders      Provider[]     @relation("ProviderOwner")
+  staffAtProvider     Provider?      @relation("ProviderStaff", fields: [providerId], references: [id], onDelete: SetNull)
+  bookings            Booking[]      @relation("CustomerBookings")
+  reviews             Review[]       @relation("CustomerReviews")
+  refreshTokens       RefreshToken[]
+  auditLogs           AuditLog[]     @relation("ActorAuditLogs")
+
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([email])
+  @@index([phone])
+  @@index([role])
+  @@index([providerId])
+}
+
+model RefreshToken {
+  id              String    @id @default(uuid())
+  tokenHash       String    @unique
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revoked         Boolean   @default(false)
+  expiresAt       DateTime
+  replacedByToken String?
+  
+  createdAt       DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+// -------------------------------------------------------------
+// PROVIDERS & BRANCHES
+// -------------------------------------------------------------
+
+model Provider {
+  id                   String               @id @default(uuid())
+  providerCode         String               @unique // e.g. "BK-PRV-001"
+  businessName         String
+  legalName            String
+  category             ProviderCategory
+  verificationStatus   KYCStatus            @default(PENDING)
+  commercialModel      CommercialModel      @default(COMMISSION)
+  commissionRate       Decimal              @default(8.00) @db.Decimal(5, 2)
+  subscriptionPlan     SubscriptionPlan     @default(NONE)
+  subscriptionStatus   SubscriptionStatus   @default(TRIAL)
+  
+  // Compliance & Regulatory
+  gstin                String?
+  panNumber            String?
+  licenseType          String?              // e.g. "NABH", "FSSAI", "MUNICIPAL_TRADE"
+  licenseNumber        String?
+  
+  // Contact & Profile
+  contactEmail         String
+  contactPhone         String
+  website              String?
+  logoUrl              String?
+  coverImageUrl        String?
+  bio                  String?              @db.Text
+  rating               Decimal              @default(0.0) @db.Decimal(3, 2)
+  reviewCount          Int                  @default(0)
+  isSponsored          Boolean              @default(false)
+  cancellationPolicy   String?              @db.Text
+
+  // Ownership & Staffing
+  ownerId              String
+  owner                User                 @relation("ProviderOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  staff                User[]               @relation("ProviderStaff")
+
+  // Operational Entities
+  branches             Branch[]
+  services             Service[]
+  bookings             Booking[]
+  reviews              Review[]
+  commissionLedgers    CommissionLedger[]
+  subscriptionInvoices SubscriptionInvoice[]
+  salesLead            SalesLead?           @relation("LeadConvertedToProvider")
+
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@index([providerCode])
+  @@index([category])
+  @@index([verificationStatus])
+  @@index([commercialModel])
+  @@index([ownerId])
+}
+
+model Branch {
+  id             String    @id @default(uuid())
+  providerId     String
+  provider       Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  name           String    // e.g. "Kankarbagh Main Bay"
+  isMainBranch   Boolean   @default(false)
+  
+  // Physical Location & Geo
+  addressLine    String
+  locality       String
+  city           String
+  state          String
+  pincode        String
+  latitude       Float
+  longitude      Float
+
+  // Contact & Operating Schedule
+  phone          String
+  email          String?
+  operatingHours Json      // JSON weekly schedule: open/close slots, breaks, holidays
+  isActive       Boolean   @default(true)
+
+  // Relations
+  services       Service[]
+  bookings       Booking[]
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([providerId])
+  @@index([city])
+  @@index([pincode])
+  @@index([latitude, longitude])
+}
+
+// -------------------------------------------------------------
+// SERVICES & CATEGORY METADATA
+// -------------------------------------------------------------
+
+model Service {
+  id               String           @id @default(uuid())
+  providerId       String
+  provider         Provider         @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  branchId         String?
+  branch           Branch?          @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  name             String
+  description      String?          @db.Text
+  durationMinutes  Int
+  basePrice        Decimal          @db.Decimal(10, 2)
+  currency         String           @default("INR")
+  category         ProviderCategory
+  
+  // Category-Specific Schema (JSONB):
+  // Healthcare: { doctorName, specialization, consultationType: 'NEW'|'FOLLOWUP', roomBayNumber, qualification }
+  // Hotels:     { roomType, occupancyMax, bedConfiguration, checkInTime, checkOutTime, cancellationWindowHours, taxPercentage }
+  // Restaurant: { mealType, seatingArea: 'INDOOR'|'OUTDOOR'|'PRIVATE', minGuests, maxGuests, noShowGraceMinutes }
+  // Salon:      { targetGender: 'MALE'|'FEMALE'|'UNISEX', stylistLevel, includesWash, addOnServices }
+  // Vehicle:    { vehicleType: 'TWO_WHEELER'|'HATCHBACK'|'SEDAN'|'SUV_LUXURY', bayType, packageTier, warrantyDays }
+  categoryMetadata Json
+  isActive         Boolean          @default(true)
+
+  bookings         Booking[]
+
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([providerId])
+  @@index([branchId])
+  @@index([category])
+  @@index([isActive])
+}
+
+// -------------------------------------------------------------
+// BOOKING ENGINE
+// -------------------------------------------------------------
+
+model Booking {
+  id                  String            @id @default(uuid())
+  bookingCode         String            @unique // e.g. "BK-2026-8492"
+  verificationCode    String?           // Offline venue verification code (e.g. "8492")
+  status              BookingStatus     @default(REQUESTED)
+  
+  customerId          String
+  customer            User              @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Restrict)
+  providerId          String
+  provider            Provider          @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  branchId            String
+  branch              Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  serviceId           String
+  service             Service           @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  bookingDate         DateTime          // Appointment date
+  timeSlot            String            // e.g. "10:30 AM" or "14:00"
+  
+  // Dynamic customer inputs matching service category (JSONB)
+  categoryInputs      Json
+
+  // Commercials & Billing Audit
+  tokenAmountPaid     Decimal           @default(0.00) @db.Decimal(10, 2)
+  estimatedBillAmount Decimal           @db.Decimal(10, 2)
+  finalBillAmount     Decimal?          @db.Decimal(10, 2) // Mandatory when marked COMPLETED
+  paymentStatus       PaymentStatus     @default(PENDING)
+
+  // Status Lifecycle Records
+  declineReason       String?
+  cancellationReason  String?
+  noShowLoggedAt      DateTime?
+  acceptedAt          DateTime?
+  confirmedAt         DateTime?
+  completedAt         DateTime?
+  cancelledAt         DateTime?
+
+  // Grievances & Mediation
+  disputeStatus       DisputeStatus     @default(NONE)
+  disputeReason       String?
+  disputeRaisedAt     DateTime?
+  disputeResolvedAt   DateTime?
+
+  // Post-Booking Relations
+  review              Review?
+  commissionLedger    CommissionLedger?
+
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([bookingCode])
+  @@index([status])
+  @@index([customerId])
+  @@index([providerId])
+  @@index([branchId])
+  @@index([bookingDate])
+}
+
+// -------------------------------------------------------------
+// COMMERCIALS, COMMISSION LEDGER & INVOICING
+// -------------------------------------------------------------
+
+model CommissionLedger {
+  id                    String        @id @default(uuid())
+  bookingId             String        @unique
+  booking               Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  providerId            String
+  provider              Provider      @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  serviceCompletedAt    DateTime
+  finalBillValue        Decimal       @db.Decimal(10, 2)
+  commissionRatePercent Decimal       @db.Decimal(5, 2)  // e.g. 8.00%
+  commissionPayable     Decimal       @db.Decimal(10, 2) // e.g. finalBillValue * 0.08
+  status                LedgerStatus  @default(PENDING)
+  
+  settlementBatchId     String?
+  settledAt             DateTime?
+
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@index([providerId])
+  @@index([status])
+  @@index([settlementBatchId])
+}
+
+model SubscriptionInvoice {
+  id                 String           @id @default(uuid())
+  providerId         String
+  provider           Provider         @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  invoiceNumber      String           @unique // e.g. "INV-2026-0391"
+  
+  billingCycleStart  DateTime
+  billingCycleEnd    DateTime
+  planTier           SubscriptionPlan
+  amountDue          Decimal          @db.Decimal(10, 2)
+  currency           String           @default("INR")
+  status             InvoiceStatus    @default(ISSUED)
+  
+  paidAt             DateTime?
+  paymentReference   String?
+
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([providerId])
+  @@index([status])
+  @@index([invoiceNumber])
+}
+
+// -------------------------------------------------------------
+// VERIFIED REVIEWS (Strictly linked to COMPLETED Bookings)
+// -------------------------------------------------------------
+
+model Review {
+  id                String    @id @default(uuid())
+  bookingId         String    @unique // Enforces strict 1 review per completed booking
+  booking           Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customerId        String
+  customer          User      @relation("CustomerReviews", fields: [customerId], references: [id], onDelete: Restrict)
+  providerId        String
+  provider          Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  rating            Int       // 1 to 5 stars
+  reviewText        String    @db.Text
+  isVerifiedBooking Boolean   @default(true)
+  
+  // Provider Merchant Response
+  providerReply     String?   @db.Text
+  providerRepliedAt DateTime?
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([providerId])
+  @@index([customerId])
+  @@index([rating])
+}
+
+// -------------------------------------------------------------
+// SALES CRM ONBOARDING PIPELINE
+// -------------------------------------------------------------
+
+model SalesLead {
+  id                     String           @id @default(uuid())
+  businessName           String
+  ownerName              String
+  phone                  String
+  email                  String
+  city                   String
+  category               ProviderCategory
+  stage                  CRMStage         @default(LEAD_01)
+  
+  assignedCommercialModel CommercialModel @default(COMMISSION)
+  planTier               SubscriptionPlan?
+  proposedCommissionRate Decimal?         @db.Decimal(5, 2)
+
+  // Array of { id, author, date, text }
+  notes                  Json
+
+  // If successfully onboarded & converted to live provider
+  convertedProviderId    String?          @unique
+  convertedProvider      Provider?        @relation("LeadConvertedToProvider", fields: [convertedProviderId], references: [id], onDelete: SetNull)
+
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  @@index([stage])
+  @@index([city])
+  @@index([category])
+}
+
+// -------------------------------------------------------------
+// PLATFORM AUDIT LOG
+// -------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actor      User?    @relation("ActorAuditLogs", fields: [actorId], references: [id], onDelete: SetNull)
+  actorRole  String   // "ADMIN" | "PROVIDER_OWNER" | "PROVIDER_STAFF" | "CUSTOMER" | "SYSTEM"
+  
+  action     String   // e.g. "KYC_APPROVED", "LEAD_STAGE_MOVED", "DISPUTE_REFUNDED", "PASSWORD_CHANGED"
+  entityType String   // "PROVIDER" | "BOOKING" | "USER" | "COMMISSION" | "LEAD"
+  entityId   String
+  
+  oldState   Json?
+  newState   Json?
+  ipAddress  String?
+  userAgent  String?
+
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+}

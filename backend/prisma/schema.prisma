@@ -1,0 +1,291 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+// -----------------------------------------------------------------------------
+// ENUMS
+// -----------------------------------------------------------------------------
+
+enum Role {
+  CUSTOMER
+  PARTNER_OWNER
+  PARTNER_STAFF
+  ADMIN
+}
+
+enum CommercialModel {
+  SUBSCRIPTION
+  COMMISSION
+}
+
+enum SubscriptionTier {
+  FREE
+  BASIC
+  BUSINESS_PRO
+}
+
+enum ProviderStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum BookingStatus {
+  REQUESTED
+  ACCEPTED
+  CONFIRMED
+  COMPLETED
+  DECLINED
+  EXPIRED
+  CANCELLED
+  NO_SHOW
+  DISPUTED
+  REFUND_REQUESTED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  REFUNDED
+}
+
+enum PaymentTransactionStatus {
+  CREATED
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+enum LedgerStatus {
+  PENDING
+  INVOICED
+  PAID
+  DISPUTED
+}
+
+enum ApplicationStage {
+  STAGE_01_LEAD
+  STAGE_02_DOC_SUBMISSION
+  STAGE_03_KYC_AUDIT
+  STAGE_04_CATALOG_SETUP
+  STAGE_05_CONTRACT_SIGN
+  STAGE_06_GO_LIVE
+}
+
+enum KycStatus {
+  PENDING
+  SUBMITTED
+  VERIFIED
+  REJECTED
+}
+
+// -----------------------------------------------------------------------------
+// MODELS
+// -----------------------------------------------------------------------------
+
+model User {
+  id                 String   @id @default(uuid())
+  fullName           String
+  email              String   @unique
+  phone              String   @unique
+  passwordHash       String
+  role               Role     @default(CUSTOMER)
+  mustChangePassword Boolean  @default(false)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // Relations
+  providers           Provider[]           @relation("OwnerProviders")
+  bookings            Booking[]            @relation("CustomerBookings")
+  reviews             Review[]             @relation("CustomerReviews")
+  partnerApplications PartnerApplication[] @relation("ApplicantUser")
+
+  @@index([email])
+  @@index([phone])
+  @@index([role])
+  @@index([isActive])
+}
+
+model Provider {
+  id               String           @id @default(uuid())
+  providerCode     String           @unique // e.g. BK-PRV-PAT-1001
+  ownerId          String
+  owner            User             @relation("OwnerProviders", fields: [ownerId], references: [id], onDelete: Cascade)
+  legalName        String
+  brandName        String
+  category         String           // 'hotels' | 'restaurants' | 'salon'
+  locality         String
+  pincode          String
+  address          String
+  latitude         Float
+  longitude        Float
+  isVerified       Boolean          @default(false)
+  isSponsored      Boolean          @default(false)
+  rating           Float            @default(0.0)
+  reviewCount      Int              @default(0)
+  commercialModel  CommercialModel  @default(COMMISSION)
+  commissionRate   Float            @default(10.0) // 10% hotels, 5% restaurants, 10% salon
+  subscriptionTier SubscriptionTier @default(FREE)
+  operatingHours   Json             // Structured opening hours & days
+  photos           String[]
+  status           ProviderStatus   @default(ACTIVE)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  // Relations
+  services            ServiceItem[]
+  bookings            Booking[]
+  reviews             Review[]
+  commissionLedgers   CommissionLedger[]
+  partnerApplications PartnerApplication[]
+
+  @@index([category])
+  @@index([locality])
+  @@index([pincode])
+  @@index([ownerId])
+  @@index([status, isVerified])
+  @@index([rating])
+}
+
+model ServiceItem {
+  id           String   @id @default(uuid())
+  providerId   String
+  provider     Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  priceInr     Decimal  @db.Decimal(10, 2)
+  durationMins Int?
+  isActive     Boolean  @default(true)
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([providerId, isActive])
+}
+
+model Booking {
+  id                 String        @id @default(uuid())
+  bookingCode        String        @unique // e.g. BK-PAT-4902
+  venuePin           String        // 4-digit check-in verification PIN
+  customerId         String
+  customer           User          @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Restrict)
+  providerId         String
+  provider           Provider      @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  category           String        // 'hotels' | 'restaurants' | 'salon'
+  status             BookingStatus @default(REQUESTED)
+  slotDate           String        // YYYY-MM-DD
+  slotTime           String        // HH:MM or slot string
+  categoryDetails    Json          // Hotel room info, diner party size/requests, salon treatment selections
+  estimatedAmountInr Decimal       @db.Decimal(10, 2)
+  finalBillInr       Decimal?      @db.Decimal(10, 2)
+  paymentStatus      PaymentStatus @default(UNPAID)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  // Relations
+  payments         Payment[]
+  commissionLedger CommissionLedger?
+  review           Review?
+
+  @@index([customerId])
+  @@index([providerId])
+  @@index([status])
+  @@index([slotDate])
+  @@index([venuePin])
+  @@index([createdAt])
+}
+
+model Payment {
+  id                String                   @id @default(uuid())
+  bookingId         String
+  booking           Booking                  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  razorpayOrderId   String?                  @unique
+  razorpayPaymentId String?                  @unique
+  amountInr         Decimal                  @db.Decimal(10, 2)
+  currency          String                   @default("INR")
+  status            PaymentTransactionStatus @default(CREATED)
+  webhookPayload    Json?
+  createdAt         DateTime                 @default(now())
+
+  @@index([bookingId])
+  @@index([status])
+}
+
+model CommissionLedger {
+  id                  String       @id @default(uuid())
+  bookingId           String       @unique
+  booking             Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  providerId          String
+  provider            Provider     @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  finalBillInr        Decimal      @db.Decimal(10, 2)
+  commissionRate      Float
+  commissionAmountInr Decimal      @db.Decimal(10, 2)
+  netPayoutInr        Decimal      @db.Decimal(10, 2)
+  status              LedgerStatus @default(PENDING)
+  createdAt           DateTime     @default(now())
+
+  @@index([providerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model PartnerApplication {
+  id              String           @id @default(uuid())
+  applicationCode String           @unique // e.g. APP-PAT-2026-0812
+  applicantId     String?
+  applicant       User?            @relation("ApplicantUser", fields: [applicantId], references: [id], onDelete: SetNull)
+  providerId      String?
+  provider        Provider?        @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  stage           ApplicationStage @default(STAGE_01_LEAD)
+  kycStatus       KycStatus        @default(PENDING)
+  businessData    Json
+  documents       Json?
+  notes           Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([stage])
+  @@index([kycStatus])
+  @@index([applicantId])
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  bookingId  String   @unique // strictly 1 verified review per booking
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   User     @relation("CustomerReviews", fields: [customerId], references: [id], onDelete: Cascade)
+  rating     Int
+  comment    String
+  tags       String[]
+  createdAt  DateTime @default(now())
+
+  @@index([providerId])
+  @@index([customerId])
+  @@index([rating])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actorRole  String
+  actionType String
+  targetId   String?
+  summary    String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([actionType])
+  @@index([createdAt])
+}
